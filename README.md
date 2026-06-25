@@ -26,7 +26,7 @@ A powerful desktop application for viewing and filtering JSONL (JSON Lines) file
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/gorkalertxundi/jsonl_viewer.git
+git clone https://github.com/gorkalertxundi/Advanced_JSONL_Multi-Filter_Viewer.git
 ```
 
 2. Ensure Python and tkinter are installed:
