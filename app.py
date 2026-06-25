@@ -475,7 +475,7 @@ class JSONLViewer:
 
     def open_github_repo(self):
         """Opens the GitHub repository in the default web browser."""
-        webbrowser.open("https://github.com/gorkalertxundi/jsonl_viewer")
+        webbrowser.open("https://github.com/gorkalertxundi/Advanced_JSONL_Multi-Filter_Viewer")
 
 if __name__ == "__main__":
     root = tk.Tk()

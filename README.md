@@ -142,11 +142,11 @@ This project is open source and available under the MIT License.
 Created by **Gorka Lertxundi**
 
 - GitHub: [gorkalertxundi](https://github.com/gorkalertxundi)
-- Repository: [jsonl_viewer](https://github.com/gorkalertxundi/jsonl_viewer)
+- Repository: [Advanced_JSONL_Multi-Filter_Viewer](https://github.com/gorkalertxundi/Advanced_JSONL_Multi-Filter_Viewer)
 
 ## Support
 
-If you encounter any issues or have suggestions, please open an issue on the [GitHub repository](https://github.com/gorkalertxundi/jsonl_viewer).
+If you encounter any issues or have suggestions, please open an issue on the [GitHub repository](https://github.com/gorkalertxundi/Advanced_JSONL_Multi-Filter_Viewer).
 
 ---
 
