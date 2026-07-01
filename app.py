@@ -15,6 +15,7 @@ class JSONLViewer:
         self.all_records = []
         self.filtered_records = []
         self.current_directory = ""
+        self.expression_history = []
         
         self.create_widgets()
         
@@ -38,33 +39,64 @@ class JSONLViewer:
         # --- Advanced Filter Matrix Panel ---
         filter_frame = ttk.LabelFrame(self.root, text=" Filter Criteria Matrix ", padding="10")
         filter_frame.pack(fill=tk.X, padx=10, pady=5)
-        
-        match_mode_frame = ttk.Frame(filter_frame)
-        match_mode_frame.pack(fill=tk.X, pady=(0, 5))
-        ttk.Label(match_mode_frame, text="Match Mode:").pack(side=tk.LEFT, padx=2)
-        self.match_mode = tk.StringVar(value="AND")
-        ttk.Radiobutton(match_mode_frame, text="ALL Conditions (AND)", variable=self.match_mode, value="AND").pack(side=tk.LEFT, padx=10)
-        ttk.Radiobutton(match_mode_frame, text="ANY Condition (OR)", variable=self.match_mode, value="OR").pack(side=tk.LEFT, padx=10)
-        
-        self.help_btn = ttk.Button(match_mode_frame, text="❓ Path Help", width=12, command=self.show_syntax_help)
-        self.help_btn.pack(side=tk.RIGHT)
 
-        self.rows_container = ttk.Frame(filter_frame)
-        self.rows_container.pack(fill=tk.X, pady=5)
-        
-        self.filter_rows = []
-        self.add_filter_row("", "")
+        expr_frame = ttk.Frame(filter_frame)
+        expr_frame.pack(fill=tk.X, pady=(0, 5))
+        ttk.Label(expr_frame, text="Expression:").pack(anchor=tk.W, padx=2)
+
+        expr_text_frame = ttk.Frame(expr_frame)
+        expr_text_frame.pack(fill=tk.X, expand=True, padx=2, pady=(2, 0))
+        self.expression_text = tk.Text(
+            expr_text_frame,
+            height=8,
+            wrap=tk.NONE,
+            font=("Consolas", 10),
+            background="#FFFFFF",
+            foreground="#000000",
+            insertbackground="#000000"
+        )
+        self.expression_text.pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+        expr_scroll_y = ttk.Scrollbar(expr_text_frame, orient=tk.VERTICAL, command=self.expression_text.yview)
+        expr_scroll_y.pack(side=tk.RIGHT, fill=tk.Y)
+        expr_scroll_x = ttk.Scrollbar(expr_frame, orient=tk.HORIZONTAL, command=self.expression_text.xview)
+        expr_scroll_x.pack(fill=tk.X, padx=2, pady=(2, 0))
+        self.expression_text.config(yscrollcommand=expr_scroll_y.set, xscrollcommand=expr_scroll_x.set)
+
+        self.expression_text.bind("<ButtonPress-1>", self.on_expression_border_press)
+        self.expression_text.bind("<B1-Motion>", self.on_expression_border_drag)
+        self.expression_text.bind("<ButtonRelease-1>", self.on_expression_border_release)
+        self.expression_text.bind("<Motion>", self.on_expression_border_motion)
+
+        self.expression_text.tag_config("expr_keyword", foreground="#0000CC")
+        self.expression_text.tag_config("expr_paren", foreground="#CC6600")
+        self.expression_text.tag_config("expr_operator", foreground="#CC0000")
+        self.expression_text.tag_config("expr_string", foreground="#008000")
+        self.expression_text.tag_config("expr_comment", foreground="#0A8F3D")
+        self.expression_text.bind("<KeyRelease>", self.on_expression_text_change)
 
         row_controls_frame = ttk.Frame(filter_frame)
         row_controls_frame.pack(fill=tk.X, pady=(5, 0))
-        
-        ttk.Button(row_controls_frame, text="➕ Add Condition Row", command=lambda: self.add_filter_row()).pack(side=tk.LEFT, padx=2)
-        ttk.Button(row_controls_frame, text="Clear All Rows", command=self.clear_all_rows).pack(side=tk.LEFT, padx=2)
-        
+
         self.reset_btn = ttk.Button(row_controls_frame, text="Reset & Show All", command=self.reset_filter)
         self.reset_btn.pack(side=tk.RIGHT, padx=2)
-        self.filter_btn = ttk.Button(row_controls_frame, text="Apply Filter Matrix", command=self.apply_filter)
+        self.filter_btn = self.create_rounded_button(
+            row_controls_frame,
+            text="Apply Expression",
+            command=self.apply_filter,
+            width=120,
+            height=22,
+            radius=3,
+            bg="#9AB1FD",
+            hover_bg="#97AEFC",
+            press_bg="#97AEFC",
+            fg="#000000"
+        )
         self.filter_btn.pack(side=tk.RIGHT, padx=5)
+        self.help_btn = ttk.Button(row_controls_frame, text="❓ Expression Help", width=18, command=self.show_syntax_help)
+        self.help_btn.pack(side=tk.LEFT, padx=2)
+        self.history_btn = ttk.Button(row_controls_frame, text="🕘 Expression History", width=20, command=self.show_expression_history)
+        self.history_btn.pack(side=tk.LEFT, padx=2)
 
         # --- Main Viewport Nested Splitter ---
         # Outer PanedWindow splits: [File Tree] | [The rest of the UI]
@@ -143,6 +175,47 @@ class JSONLViewer:
         ttk.Label(creator_frame, text="Created by Gorka Lertxundi", font=("Arial", 9)).pack(side=tk.LEFT, padx=5)
         github_btn = ttk.Button(creator_frame, text="🐙 GitHub", command=self.open_github_repo)
         github_btn.pack(side=tk.LEFT, padx=2)
+
+    def _draw_rounded_rect(self, canvas, x1, y1, x2, y2, radius, color):
+        body = []
+        body.append(canvas.create_rectangle(x1 + radius, y1, x2 - radius, y2, fill=color, outline=color))
+        body.append(canvas.create_rectangle(x1, y1 + radius, x2, y2 - radius, fill=color, outline=color))
+        body.append(canvas.create_oval(x1, y1, x1 + 2 * radius, y1 + 2 * radius, fill=color, outline=color))
+        body.append(canvas.create_oval(x2 - 2 * radius, y1, x2, y1 + 2 * radius, fill=color, outline=color))
+        body.append(canvas.create_oval(x1, y2 - 2 * radius, x1 + 2 * radius, y2, fill=color, outline=color))
+        body.append(canvas.create_oval(x2 - 2 * radius, y2 - 2 * radius, x2, y2, fill=color, outline=color))
+        return body
+
+    def _set_canvas_items_color(self, canvas, items, color):
+        for item in items:
+            canvas.itemconfig(item, fill=color, outline=color)
+
+    def create_rounded_button(self, parent, text, command, width, height, radius, bg, hover_bg, press_bg, fg):
+        canvas_bg = self.root.cget("bg")
+        canvas = tk.Canvas(parent, width=width, height=height, highlightthickness=0, bd=0, bg=canvas_bg)
+        shape_items = self._draw_rounded_rect(canvas, 1, 1, width - 1, height - 1, radius, bg)
+        label_item = canvas.create_text(width // 2, height // 2, text=text, fill=fg, font=("Segoe UI", 9))
+
+        def on_enter(_event):
+            self._set_canvas_items_color(canvas, shape_items, hover_bg)
+
+        def on_leave(_event):
+            self._set_canvas_items_color(canvas, shape_items, bg)
+
+        def on_press(_event):
+            self._set_canvas_items_color(canvas, shape_items, press_bg)
+
+        def on_release(_event):
+            self._set_canvas_items_color(canvas, shape_items, hover_bg)
+            command()
+
+        for item in [*shape_items, label_item]:
+            canvas.tag_bind(item, "<Enter>", on_enter)
+            canvas.tag_bind(item, "<Leave>", on_leave)
+            canvas.tag_bind(item, "<ButtonPress-1>", on_press)
+            canvas.tag_bind(item, "<ButtonRelease-1>", on_release)
+
+        return canvas
 
     # --- Directory Tree Utilities ---
     def choose_directory(self):
@@ -269,50 +342,268 @@ class JSONLViewer:
         self.file_label.config(text=os.path.basename(file_path))
         self.reset_filter()
 
-    def add_filter_row(self, initial_path="", initial_val=""):
-        row_frame = ttk.Frame(self.rows_container)
-        row_frame.pack(fill=tk.X, pady=2)
-        
-        ttk.Label(row_frame, text=f"Path:").pack(side=tk.LEFT, padx=2)
-        path_ent = ttk.Entry(row_frame, width=35)
-        path_ent.pack(side=tk.LEFT, padx=2)
-        path_ent.insert(0, initial_path)
-        
-        ttk.Label(row_frame, text=f"Value contains:").pack(side=tk.LEFT, padx=5)
-        val_ent = ttk.Entry(row_frame, width=35)
-        val_ent.pack(side=tk.LEFT, padx=2)
-        val_ent.insert(0, initial_val)
-        
-        del_btn = ttk.Button(row_frame, text="❌", width=3, command=lambda: self.delete_filter_row(row_frame))
-        del_btn.pack(side=tk.LEFT, padx=5)
-        
-        self.filter_rows.append({"frame": row_frame, "path_entry": path_ent, "val_entry": val_ent})
-
-    def delete_filter_row(self, row_frame):
-        row_frame.destroy()
-        self.filter_rows = [r for r in self.filter_rows if r["frame"] != row_frame]
-
-    def clear_all_rows(self):
-        for r in self.filter_rows:
-            r["frame"].destroy()
-        self.filter_rows = []
-
     def show_syntax_help(self):
-        help_text = (
-            "JSON Path Syntax Reference Guide\n"
-            "=========================================\n\n"
-            "1. MULTI-ARRAY CONCATENATION\n"
-            "   If arrays are nested inside other arrays, chain wildcards together:\n"
-            "   • Path: data.test[*].sample[*]\n\n"
-            "2. STANDARD ARRAY WILD CARDS ([*])\n"
-            "   • Path: data.test[*].id\n\n"
-            "3. EXPLICIT INDEXES / SLICES ([0] or [-1])\n"
-            "   • First test: data.test[0].id\n"
-            "   • Last test:  data.test[-1].id\n\n"
-            "4. BLANK FUZZY SEARCH\n"
-            "   Leave 'Path' blank to search for the value anywhere in that record."
+        if hasattr(self, "help_window") and self.help_window.winfo_exists():
+            self.help_window.lift()
+            self.help_window.focus_force()
+            return
+
+        self.help_window = tk.Toplevel(self.root)
+        self.help_window.title("Expression Help")
+        self.help_window.geometry("940x680")
+        self.help_window.minsize(760, 520)
+        self.help_window.transient(self.root)
+
+        container = ttk.Frame(self.help_window, padding=14)
+        container.pack(fill=tk.BOTH, expand=True)
+
+        title_lbl = ttk.Label(
+            container,
+            text="Expression Syntax Reference",
+            font=("Segoe UI", 16, "bold")
         )
-        messagebox.showinfo("JSON Path Query Guide", help_text)
+        title_lbl.pack(anchor=tk.W, pady=(0, 8))
+
+        subtitle_lbl = ttk.Label(
+            container,
+            text="Use logical operators, parentheses, and LIKE patterns to filter JSON records.",
+            font=("Segoe UI", 10)
+        )
+        subtitle_lbl.pack(anchor=tk.W, pady=(0, 10))
+
+        text_frame = ttk.Frame(container)
+        text_frame.pack(fill=tk.BOTH, expand=True)
+
+        help_text = tk.Text(
+            text_frame,
+            wrap=tk.WORD,
+            font=("Consolas", 10),
+            background="#FFFFFF",
+            foreground="#1f2937",
+            spacing1=2,
+            spacing3=3,
+            padx=10,
+            pady=10,
+            borderwidth=1,
+            relief=tk.SOLID
+        )
+        help_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        help_scroll = ttk.Scrollbar(text_frame, orient=tk.VERTICAL, command=help_text.yview)
+        help_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        help_text.config(yscrollcommand=help_scroll.set)
+
+        help_text.tag_config("h1", font=("Segoe UI", 12, "bold"), foreground="#111827", spacing1=8, spacing3=6)
+        help_text.tag_config("h2", font=("Segoe UI", 10, "bold"), foreground="#1d4ed8", spacing1=6, spacing3=2)
+        help_text.tag_config("body", font=("Consolas", 10), foreground="#1f2937")
+        help_text.tag_config("code", font=("Consolas", 10, "bold"), foreground="#065f46")
+        help_text.tag_config("note", font=("Consolas", 10), foreground="#7c2d12")
+
+        help_text.insert(tk.END, "Expression Filter\n", "h1")
+        help_text.insert(tk.END, "Supports AND, OR, parentheses, =, != and LIKE.\n\n", "body")
+
+        help_text.insert(tk.END, "Single-line example\n", "h2")
+        help_text.insert(tk.END, "customerId = 'C-1024' AND (region = 'EU' OR orderState != 'Shipped')\n\n", "code")
+
+        help_text.insert(tk.END, "Multi-line example\n", "h2")
+        help_text.insert(tk.END, "customerId = 'C-1024'\nAND (region = 'EU' OR orderState LIKE '%Pending%')\n\n", "code")
+
+        help_text.insert(tk.END, "Cheat-sheet\n", "h2")
+        help_text.insert(tk.END, "field = 'value'\n", "code")
+        help_text.insert(tk.END, "field != 'value'\n", "code")
+        help_text.insert(tk.END, "field LIKE '%text%'\n", "code")
+        help_text.insert(tk.END, "field LIKE '%text'\n", "code")
+        help_text.insert(tk.END, "field LIKE 'text%'\n", "code")
+        help_text.insert(tk.END, "-- this is a comment line\n", "code")
+        help_text.insert(tk.END, "Use AND/OR and (...)\n\n", "body")
+
+        help_text.insert(tk.END, "LIKE patterns\n", "h2")
+        help_text.insert(tk.END, "productName LIKE '%Pro%'      -> contains\n", "code")
+        help_text.insert(tk.END, "city LIKE '%ville'            -> ends with\n", "code")
+        help_text.insert(tk.END, "category LIKE 'Electro%'      -> starts with\n\n", "code")
+
+        help_text.insert(tk.END, "Comments\n", "h2")
+        help_text.insert(tk.END, "Lines starting with '--' are ignored by the filter parser.\n", "body")
+        help_text.insert(tk.END, "Example:\n", "body")
+        help_text.insert(tk.END, "-- Narrow down to EU pending orders\n", "code")
+        help_text.insert(tk.END, "region = 'EU' AND orderState LIKE '%Pending%'\n\n", "code")
+
+        help_text.insert(tk.END, "JSON path notes\n", "h2")
+        help_text.insert(tk.END, "data.test[*].sample[*]        -> nested arrays\n", "code")
+        help_text.insert(tk.END, "data.test[*].id               -> wildcard over array\n", "code")
+        help_text.insert(tk.END, "data.test[0].id / data.test[-1].id -> first / last item\n\n", "code")
+
+        help_text.insert(tk.END, "Tip: leave path blank in row-style search to do a global fuzzy match.\n", "note")
+        help_text.config(state=tk.DISABLED)
+
+        actions = ttk.Frame(container)
+        actions.pack(fill=tk.X, pady=(10, 0))
+        ttk.Button(actions, text="Close", command=self.help_window.destroy).pack(side=tk.RIGHT)
+
+    def _is_near_expression_bottom_border(self, event):
+        widget_height = self.expression_text.winfo_height()
+        return event.y >= widget_height - 8
+
+    def on_expression_border_press(self, event):
+        if self._is_near_expression_bottom_border(event):
+            self._expr_resize_active = True
+            self._expr_resize_start_y = event.y_root
+            self._expr_resize_start_height = int(self.expression_text.cget("height"))
+            return "break"
+        self._expr_resize_active = False
+
+    def on_expression_border_drag(self, event):
+        if not getattr(self, "_expr_resize_active", False):
+            return
+        delta_pixels = event.y_root - self._expr_resize_start_y
+        delta_lines = int(delta_pixels / 16)
+        new_height = max(3, min(30, self._expr_resize_start_height + delta_lines))
+        self.expression_text.config(height=new_height)
+        return "break"
+
+    def on_expression_border_release(self, _event):
+        self._expr_resize_active = False
+
+    def on_expression_border_motion(self, event):
+        if self._is_near_expression_bottom_border(event) or getattr(self, "_expr_resize_active", False):
+            self.expression_text.config(cursor="sb_v_double_arrow")
+        else:
+            self.expression_text.config(cursor="xterm")
+
+    def strip_expression_comments(self, expression_text):
+        lines = expression_text.splitlines()
+        kept_lines = []
+        for line in lines:
+            if re.match(r"^\s*--", line):
+                continue
+            kept_lines.append(line)
+        return "\n".join(kept_lines)
+
+    def add_expression_to_history(self, expression_text):
+        cleaned = expression_text.strip()
+        if not cleaned:
+            return
+
+        if cleaned in self.expression_history:
+            self.expression_history.remove(cleaned)
+
+        self.expression_history.append(cleaned)
+
+        if len(self.expression_history) > 50:
+            self.expression_history.pop(0)
+
+        if hasattr(self, "history_window") and self.history_window.winfo_exists():
+            self.refresh_expression_history_list()
+
+    def refresh_expression_history_list(self):
+        if not hasattr(self, "history_listbox"):
+            return
+
+        self.history_listbox.delete(0, tk.END)
+        self._history_display_to_value = list(reversed(self.expression_history))
+
+        for idx, expr in enumerate(self._history_display_to_value, 1):
+            first_line = expr.splitlines()[0].strip()
+            preview = first_line[:70] + ("..." if len(first_line) > 70 else "")
+            self.history_listbox.insert(tk.END, f"{idx:02d}. {preview}")
+
+        if self._history_display_to_value:
+            self.history_listbox.selection_set(0)
+            self.on_history_select()
+        else:
+            self.history_preview.config(state=tk.NORMAL)
+            self.history_preview.delete("1.0", tk.END)
+            self.history_preview.insert(tk.END, "No expressions applied yet in this session.")
+            self.history_preview.config(state=tk.DISABLED)
+
+    def get_selected_history_expression(self):
+        if not hasattr(self, "history_listbox"):
+            return None
+        sel = self.history_listbox.curselection()
+        if not sel:
+            return None
+        idx = sel[0]
+        if idx >= len(self._history_display_to_value):
+            return None
+        return self._history_display_to_value[idx]
+
+    def on_history_select(self, event=None):
+        selected_expr = self.get_selected_history_expression()
+        self.history_preview.config(state=tk.NORMAL)
+        self.history_preview.delete("1.0", tk.END)
+        if selected_expr:
+            self.history_preview.insert(tk.END, selected_expr)
+            self.colorize_expression_widget(self.history_preview)
+        self.history_preview.config(state=tk.DISABLED)
+
+    def copy_selected_history_expression(self):
+        selected_expr = self.get_selected_history_expression()
+        if not selected_expr:
+            return
+        self.root.clipboard_clear()
+        self.root.clipboard_append(selected_expr)
+
+    def insert_selected_history_expression(self):
+        selected_expr = self.get_selected_history_expression()
+        if not selected_expr:
+            return
+        self.expression_text.delete("1.0", tk.END)
+        self.expression_text.insert(tk.END, selected_expr)
+        self.colorize_expression_text()
+        self.expression_text.focus_set()
+
+    def show_expression_history(self):
+        if hasattr(self, "history_window") and self.history_window.winfo_exists():
+            self.history_window.lift()
+            self.history_window.focus_force()
+            return
+
+        self.history_window = tk.Toplevel(self.root)
+        self.history_window.title("Expression History")
+        self.history_window.geometry("900x520")
+        self.history_window.minsize(700, 420)
+        self.history_window.transient(self.root)
+
+        container = ttk.Frame(self.history_window, padding=12)
+        container.pack(fill=tk.BOTH, expand=True)
+
+        ttk.Label(container, text="Recent Expressions (session only)", font=("Segoe UI", 12, "bold")).pack(anchor=tk.W, pady=(0, 8))
+
+        main = ttk.PanedWindow(container, orient=tk.HORIZONTAL)
+        main.pack(fill=tk.BOTH, expand=True)
+
+        left = ttk.Frame(main)
+        main.add(left, weight=1)
+
+        self.history_listbox = tk.Listbox(left, font=("Consolas", 10))
+        self.history_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        self.history_listbox.bind("<<ListboxSelect>>", self.on_history_select)
+        self.history_listbox.bind("<Double-Button-1>", lambda _e: self.insert_selected_history_expression())
+
+        left_scroll = ttk.Scrollbar(left, orient=tk.VERTICAL, command=self.history_listbox.yview)
+        left_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        self.history_listbox.config(yscrollcommand=left_scroll.set)
+
+        right = ttk.Frame(main, padding=(10, 0, 0, 0))
+        main.add(right, weight=1)
+
+        ttk.Label(right, text="Preview:").pack(anchor=tk.W)
+        self.history_preview = tk.Text(right, wrap=tk.WORD, font=("Consolas", 10), background="#FFFFFF", foreground="#000000", height=14)
+        self.history_preview.pack(fill=tk.BOTH, expand=True)
+        self.history_preview.tag_config("expr_keyword", foreground="#0000CC")
+        self.history_preview.tag_config("expr_paren", foreground="#CC6600")
+        self.history_preview.tag_config("expr_operator", foreground="#CC0000")
+        self.history_preview.tag_config("expr_string", foreground="#008000")
+        self.history_preview.tag_config("expr_comment", foreground="#0A8F3D")
+        self.history_preview.config(state=tk.DISABLED)
+
+        actions = ttk.Frame(container)
+        actions.pack(fill=tk.X, pady=(10, 0))
+        ttk.Button(actions, text="Insert in Editor", command=self.insert_selected_history_expression).pack(side=tk.LEFT)
+        ttk.Button(actions, text="Copy", command=self.copy_selected_history_expression).pack(side=tk.LEFT, padx=6)
+        ttk.Button(actions, text="Close", command=self.history_window.destroy).pack(side=tk.RIGHT)
+
+        self.refresh_expression_history_list()
 
     def parse_path_string(self, path_str):
         raw_segments = path_str.split('.')
@@ -383,32 +674,270 @@ class JSONLViewer:
             
         return any(val_query in s for s in flattened_strings)
 
-    def apply_filter(self):
-        active_rules = []
-        for row in self.filter_rows:
-            p = row["path_entry"].get().strip()
-            v = row["val_entry"].get().strip().lower()
-            if p or v:
-                active_rules.append((p, v))
-                
-        if not active_rules:
-            self.reset_filter()
-            return
-            
-        self.filtered_records = []
-        mode = self.match_mode.get()
-        
-        for rec in self.all_records:
-            row_matches = [self.check_single_condition(rec, p, v) for p, v in active_rules]
-            
-            if mode == "AND" and all(row_matches):
-                self.filtered_records.append(rec)
-            elif mode == "OR" and any(row_matches):
-                self.filtered_records.append(rec)
-                
+    def tokenize_expression(self, expression_text):
+        token_pattern = re.compile(
+            r"\s*(?:(?P<LPAREN>\()|(?P<RPAREN>\))|(?P<NEQ>!=)|(?P<EQ>=)|"
+            r"(?P<AND>AND\b)|(?P<OR>OR\b)|(?P<LIKE>LIKE\b)|"
+            r"(?P<STRING>'(?:\\.|[^'\\])*'|\"(?:\\.|[^\"\\])*\")|"
+            r"(?P<IDENT>[A-Za-z_][A-Za-z0-9_\.\[\]\-\*]*)|(?P<MISMATCH>.))",
+            flags=re.IGNORECASE
+        )
+
+        tokens = []
+        position = 0
+        while position < len(expression_text):
+            match = token_pattern.match(expression_text, position)
+            if not match:
+                raise ValueError(f"Invalid token near position {position + 1}")
+
+            kind = match.lastgroup
+            value = match.group(kind)
+            position = match.end()
+
+            if kind == "MISMATCH":
+                raise ValueError(f"Unexpected token '{value}' at position {position}")
+
+            if kind in {"AND", "OR", "LIKE"}:
+                value = value.upper()
+
+            tokens.append((kind, value))
+
+        return tokens
+
+    def _current_token(self, tokens, idx):
+        if idx < len(tokens):
+            return tokens[idx]
+        return None
+
+    def _consume_token(self, tokens, idx, expected_kind=None):
+        tok = self._current_token(tokens, idx)
+        if tok is None:
+            raise ValueError("Unexpected end of expression")
+        if expected_kind and tok[0] != expected_kind:
+            raise ValueError(f"Expected {expected_kind}, found {tok[1]}")
+        return tok, idx + 1
+
+    def _unescape_string_token(self, raw):
+        quote = raw[0]
+        content = raw[1:-1]
+        if quote == "'":
+            return content.replace("\\'", "'").replace('\\\\', '\\')
+        return content.replace('\\\"', '"').replace('\\\\', '\\')
+
+    def _convert_ident_literal(self, ident_value):
+        lowered = ident_value.lower()
+        if lowered == "true":
+            return ("LITERAL", True)
+        if lowered == "false":
+            return ("LITERAL", False)
+        if lowered == "null":
+            return ("LITERAL", None)
+        if re.fullmatch(r"-?\d+", ident_value):
+            return ("LITERAL", int(ident_value))
+        if re.fullmatch(r"-?\d+\.\d+", ident_value):
+            return ("LITERAL", float(ident_value))
+        return ("LITERAL", ident_value)
+
+    def _parse_value_token(self, tokens, idx):
+        tok = self._current_token(tokens, idx)
+        if tok is None:
+            raise ValueError("Missing value in condition")
+
+        if tok[0] == "STRING":
+            _, idx = self._consume_token(tokens, idx, "STRING")
+            return ("STRING", self._unescape_string_token(tok[1])), idx
+
+        if tok[0] == "IDENT":
+            _, idx = self._consume_token(tokens, idx, "IDENT")
+            return self._convert_ident_literal(tok[1]), idx
+
+        raise ValueError(f"Expected value, found {tok[1]}")
+
+    def _parse_condition_token(self, tokens, idx):
+        path_tok, idx = self._consume_token(tokens, idx, "IDENT")
+        op_tok = self._current_token(tokens, idx)
+        if op_tok is None or op_tok[0] not in {"EQ", "NEQ", "LIKE"}:
+            raise ValueError("Condition must use '=', '!=', or 'LIKE'")
+        _, idx = self._consume_token(tokens, idx, op_tok[0])
+        value, idx = self._parse_value_token(tokens, idx)
+        return ("COND", path_tok[1], op_tok[1], value), idx
+
+    def _parse_factor(self, tokens, idx):
+        tok = self._current_token(tokens, idx)
+        if tok is None:
+            raise ValueError("Unexpected end of expression")
+        if tok[0] == "LPAREN":
+            _, idx = self._consume_token(tokens, idx, "LPAREN")
+            node, idx = self._parse_or_expression(tokens, idx)
+            _, idx = self._consume_token(tokens, idx, "RPAREN")
+            return node, idx
+        return self._parse_condition_token(tokens, idx)
+
+    def _parse_and_expression(self, tokens, idx):
+        node, idx = self._parse_factor(tokens, idx)
+        while True:
+            tok = self._current_token(tokens, idx)
+            if tok is None or tok[0] != "AND":
+                break
+            _, idx = self._consume_token(tokens, idx, "AND")
+            right, idx = self._parse_factor(tokens, idx)
+            node = ("AND", node, right)
+        return node, idx
+
+    def _parse_or_expression(self, tokens, idx):
+        node, idx = self._parse_and_expression(tokens, idx)
+        while True:
+            tok = self._current_token(tokens, idx)
+            if tok is None or tok[0] != "OR":
+                break
+            _, idx = self._consume_token(tokens, idx, "OR")
+            right, idx = self._parse_and_expression(tokens, idx)
+            node = ("OR", node, right)
+        return node, idx
+
+    def parse_expression(self, expression_text):
+        tokens = self.tokenize_expression(expression_text)
+        if not tokens:
+            raise ValueError("Expression is empty")
+
+        ast, idx = self._parse_or_expression(tokens, 0)
+        if idx != len(tokens):
+            raise ValueError(f"Unexpected token '{tokens[idx][1]}'")
+        return ast
+
+    def flatten_record_values(self, value):
+        if isinstance(value, list):
+            flattened = []
+            for item in value:
+                flattened.extend(self.flatten_record_values(item))
+            return flattened
+        return [value]
+
+    def evaluate_expression_condition(self, record, path_query, operator, value_info):
+        path_tokens = self.parse_path_string(path_query)
+        found_values = self.get_values_by_path(record, path_tokens)
+        candidates = []
+        for val in found_values:
+            candidates.extend(self.flatten_record_values(val))
+
+        if not candidates:
+            return operator == "!="
+
+        value_type, expected_value = value_info
+
+        def values_like(candidate):
+            pattern = str(expected_value)
+            candidate_text = str(candidate)
+            if pattern.startswith('%') and pattern.endswith('%') and len(pattern) >= 2:
+                return pattern[1:-1].lower() in candidate_text.lower()
+            if pattern.startswith('%'):
+                return candidate_text.lower().endswith(pattern[1:].lower())
+            if pattern.endswith('%'):
+                return candidate_text.lower().startswith(pattern[:-1].lower())
+            return candidate_text.lower() == pattern.lower()
+
+        def values_equal(candidate):
+            if value_type == "STRING":
+                return str(candidate) == expected_value
+
+            if isinstance(expected_value, (int, float)) and isinstance(candidate, (int, float)):
+                return candidate == expected_value
+
+            if isinstance(expected_value, bool) and isinstance(candidate, bool):
+                return candidate == expected_value
+
+            if expected_value is None:
+                return candidate is None or str(candidate).lower() == "null"
+
+            return str(candidate) == str(expected_value)
+
+        if operator == "LIKE":
+            return any(values_like(c) for c in candidates)
+
+        if operator == "=":
+            return any(values_equal(c) for c in candidates)
+
+        return all(not values_equal(c) for c in candidates)
+
+    def evaluate_expression_ast(self, record, node):
+        node_type = node[0]
+        if node_type == "COND":
+            _, path_query, operator, value_info = node
+            return self.evaluate_expression_condition(record, path_query, operator, value_info)
+        if node_type == "AND":
+            return self.evaluate_expression_ast(record, node[1]) and self.evaluate_expression_ast(record, node[2])
+        if node_type == "OR":
+            return self.evaluate_expression_ast(record, node[1]) or self.evaluate_expression_ast(record, node[2])
+        return False
+
+    def apply_expression_filter(self, expression_text):
+        ast = self.parse_expression(expression_text)
+        self.filtered_records = [rec for rec in self.all_records if self.evaluate_expression_ast(rec, ast)]
         self.update_listbox()
 
+    def colorize_expression_text(self):
+        self.colorize_expression_widget(self.expression_text)
+
+    def colorize_expression_widget(self, text_widget):
+        full_text = text_widget.get("1.0", tk.END)
+
+        for tag in ("expr_keyword", "expr_paren", "expr_operator", "expr_string", "expr_comment"):
+            text_widget.tag_remove(tag, "1.0", tk.END)
+
+        keyword_pattern = r"\b(AND|OR|LIKE)\b"
+        paren_pattern = r"[()]"
+        operator_pattern = r"!=|="
+        string_pattern = r"'(?:\\.|[^'\\])*'|\"(?:\\.|[^\"\\])*\""
+
+        for match in re.finditer(string_pattern, full_text, flags=re.IGNORECASE):
+            start = f"1.0+{match.start()}c"
+            end = f"1.0+{match.end()}c"
+            text_widget.tag_add("expr_string", start, end)
+
+        for match in re.finditer(keyword_pattern, full_text, flags=re.IGNORECASE):
+            start = f"1.0+{match.start()}c"
+            end = f"1.0+{match.end()}c"
+            text_widget.tag_add("expr_keyword", start, end)
+
+        for match in re.finditer(paren_pattern, full_text):
+            start = f"1.0+{match.start()}c"
+            end = f"1.0+{match.end()}c"
+            text_widget.tag_add("expr_paren", start, end)
+
+        for match in re.finditer(operator_pattern, full_text):
+            start = f"1.0+{match.start()}c"
+            end = f"1.0+{match.end()}c"
+            text_widget.tag_add("expr_operator", start, end)
+
+        comment_pattern = r"^\s*--.*$"
+        for match in re.finditer(comment_pattern, full_text, flags=re.MULTILINE):
+            start = f"1.0+{match.start()}c"
+            end = f"1.0+{match.end()}c"
+            text_widget.tag_add("expr_comment", start, end)
+
+    def on_expression_text_change(self, event=None):
+        self.colorize_expression_text()
+
+    def apply_filter(self):
+        raw_expression_text = self.expression_text.get("1.0", tk.END).strip()
+        if not raw_expression_text:
+            self.reset_filter()
+            return
+
+        expression_text = self.strip_expression_comments(raw_expression_text).strip()
+        if not expression_text:
+            self.reset_filter()
+            return
+
+        try:
+            self.apply_expression_filter(expression_text)
+            self.add_expression_to_history(raw_expression_text)
+        except ValueError as err:
+            messagebox.showerror("Expression Error", str(err))
+
     def reset_filter(self):
+        self.expression_text.delete("1.0", tk.END)
+        self.colorize_expression_text()
         self.filtered_records = list(self.all_records)
         self.update_listbox()
 
