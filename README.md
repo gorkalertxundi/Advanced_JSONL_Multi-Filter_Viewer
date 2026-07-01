@@ -119,15 +119,21 @@ JSONLViewer
 ```
 
 ## EXE Generation
-To create a standalone executable for Windows:
-1. Install pyinstaller:
+To create a standalone executable for Windows with the custom icon in the `.exe` and taskbar/window:
+
+1. Install PyInstaller:
 ```bash
-   pip install pyinstaller
+pip install pyinstaller
 ```
-2. Run the following command in the project directory:
+
+2. Build the executable from the project directory (recommended):
 ```bash
-   pyinstaller --onefile --windowed app.py
+pyinstaller --noconfirm --clean --onefile --windowed --name jsonl-viewer --icon app.ico --add-data "app.ico;." app.py
 ```
+
+Notes:
+- Output is generated in `dist/`.
+- If you had an older pinned app in the Windows taskbar, unpin it and pin the newly generated executable again.
 
 ## Contributing
 

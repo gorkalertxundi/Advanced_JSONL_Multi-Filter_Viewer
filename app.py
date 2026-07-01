@@ -4,13 +4,30 @@ import json
 import re
 import threading
 import os
+import sys
 import webbrowser
+import ctypes
+
+
+def setup_windows_app_id():
+    """Ensure Windows taskbar uses this app identity and icon."""
+    if os.name != "nt":
+        return
+
+    try:
+        import ctypes
+        app_id = "gorka.jsonlviewer.app"
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(app_id)
+    except Exception:
+        # Safe no-op if unavailable in the current runtime.
+        pass
 
 class JSONLViewer:
     def __init__(self, root):
         self.root = root
         self.root.title("Advanced JSONL Multi-Filter Viewer")
         self.root.geometry("1400x850")
+        self.setup_app_icon()
         
         self.all_records = []
         self.filtered_records = []
@@ -21,6 +38,83 @@ class JSONLViewer:
         
         # Auto-load the user's home directory to get started immediately
         self.load_directory(os.path.expanduser("~"))
+
+    def setup_app_icon(self):
+        if os.name == "nt":
+            try:
+                ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("gorka.jsonlviewer.app")
+            except Exception:
+                pass
+
+        candidate_paths = []
+
+        # When running from a PyInstaller onefile build with --add-data app.ico;.
+        meipass_dir = getattr(sys, "_MEIPASS", None)
+        if meipass_dir:
+            candidate_paths.append(os.path.join(meipass_dir, "app.ico"))
+
+        # When running from source.
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        candidate_paths.append(os.path.join(script_dir, "app.ico"))
+
+        # When app.ico is placed next to the generated executable.
+        exe_dir = os.path.dirname(os.path.abspath(sys.executable))
+        candidate_paths.append(os.path.join(exe_dir, "app.ico"))
+
+        # Last resort: current working directory.
+        candidate_paths.append(os.path.join(os.getcwd(), "app.ico"))
+
+        for icon_path in candidate_paths:
+            if not os.path.exists(icon_path):
+                continue
+            try:
+                self.root.iconbitmap(icon_path)
+                self._set_windows_window_icons(icon_path)
+                return
+            except tk.TclError:
+                # iconbitmap can fail on some environments; keep trying.
+                continue
+
+        # Final fallback: on Windows, Tk can use an executable with an embedded icon.
+        if getattr(sys, "frozen", False):
+            try:
+                self.root.iconbitmap(sys.executable)
+                self._set_windows_window_icons(sys.executable)
+                return
+            except tk.TclError:
+                pass
+
+    def _set_windows_window_icons(self, icon_source_path):
+        if os.name != "nt":
+            return
+
+        try:
+            hwnd = self.root.winfo_id()
+            user32 = ctypes.windll.user32
+
+            image_icon = 1
+            lr_loadfromfile = 0x0010
+            icon_small = 0
+            icon_big = 1
+            wm_seticon = 0x0080
+
+            # Use system metrics so the icon matches Windows expected sizes.
+            small_w = user32.GetSystemMetrics(49)
+            small_h = user32.GetSystemMetrics(50)
+            big_w = user32.GetSystemMetrics(11)
+            big_h = user32.GetSystemMetrics(12)
+
+            hicon_small = user32.LoadImageW(None, icon_source_path, image_icon, small_w, small_h, lr_loadfromfile)
+            hicon_big = user32.LoadImageW(None, icon_source_path, image_icon, big_w, big_h, lr_loadfromfile)
+
+            if hicon_small:
+                user32.SendMessageW(hwnd, wm_seticon, icon_small, hicon_small)
+                self._hicon_small = hicon_small
+            if hicon_big:
+                user32.SendMessageW(hwnd, wm_seticon, icon_big, hicon_big)
+                self._hicon_big = hicon_big
+        except Exception:
+            pass
 
     def create_widgets(self):
         # --- Top Control Panel ---
@@ -1007,6 +1101,7 @@ class JSONLViewer:
         webbrowser.open("https://github.com/gorkalertxundi/Advanced_JSONL_Multi-Filter_Viewer")
 
 if __name__ == "__main__":
+    setup_windows_app_id()
     root = tk.Tk()
     app = JSONLViewer(root)
     root.mainloop()
